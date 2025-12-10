@@ -534,6 +534,7 @@ def ensure_model_exists(model_path: str):
     return True
 
 @st.cache_resource
+@st.cache_resource
 def load_detector(model_path: str):
     """Load detector safely."""
     try:
@@ -543,6 +544,11 @@ def load_detector(model_path: str):
             st.warning(f"Model '{model_path}' not found. Using YOLOv8n for testing.")
             model_path = 'yolov8n.pt'
         
+        return YoloDiseaseDetector(model_path=model_path, device='cpu')
+    except Exception as e:
+        st.error(f"❌ Failed to load model: {str(e)}")
+        return None
+
 
 def get_disease_info(disease_name):
     """
