@@ -447,57 +447,56 @@ class YoloDiseaseDetector:
 		except Exception as e:
 			raise RuntimeError(f"Failed to load YOLO model: {str(e)}")
 
-	def predict_image(self, image: Image.Image, conf: float = 0.25, iou: float = 0.50, imgsz: int = 640) -> Tuple[Image.Image, List[Dict]]:
-		"""
-		Run prediction on a PIL Image and return an annotated PIL Image and detections list.
-		Detections list has dicts: {class_id, class_name, confidence, bbox[x1,y1,x2,y2], detection_id}
-		"""
-		# Ensure RGB then convert to BGR ndarray for Ultralytics
-		if image.mode != "RGB":
-			image = image.convert("RGB")
-		rgb = np.array(image)
-		bgr = rgb[:, :, ::-1]
+def predict_image(self, image: Image.Image, conf: float = 0.25, iou: float = 0.50, imgsz: int = 640) -> Tuple[Image.Image, List[Dict]]:
+    """
+    Run prediction on a PIL Image and return an annotated PIL Image and detections list.
+    Detections list has dicts: {class_id, class_name, confidence, bbox[x1,y1,x2,y2], detection_id}
+    """
+    # Ensure RGB then convert to BGR ndarray for Ultralytics
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    rgb = np.array(image)
+    bgr = rgb[:, :, ::-1]
 
-		results = self.model.predict(source=bgr, conf=conf, iou=iou, imgsz=imgsz, verbose=False)
-		if not results:
-			return image, []
+    results = self.model.predict(source=bgr, conf=conf, iou=iou, imgsz=imgsz, verbose=False)
+    if not results:
+        return image, []
 
-		res = results[0]
-		
-		# Use original YOLO plot but remove ID numbers from labels
-		# Set environment variables again before importing cv2
-		os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '0'
-		os.environ['QT_QPA_PLATFORM'] = 'offscreen'
-		os.environ['DISPLAY'] = ''
-		
-		import cv2
-		# Suppress OpenCV warnings and GUI
-		cv2.setNumThreads(1)
-		
-		annotated = res.plot()  # Get original YOLO styling
-		annotated_bgr = annotated.copy()
-		
-		detections: List[Dict] = []
-		if res.boxes is not None and len(res.boxes) > 0:
-			classes = res.names
-			for i, box in enumerate(res.boxes, 1):
-				cls_id = int(box.cls.item())
-				conf_score = float(box.conf.item())
-				x1, y1, x2, y2 = [float(v) for v in box.xyxy[0].tolist()]
-				class_name = classes.get(cls_id, str(cls_id)) if isinstance(classes, dict) else str(cls_id)
-				
-				detections.append(
-					{
-						"detection_id": i,
-						"class_id": cls_id,
-						"class_name": class_name,
-						"confidence": conf_score,
-						"bbox": [x1, y1, x2, y2],
-					}
-				)
-		
-		annotated_pil = Image.fromarray(annotated_bgr[:, :, ::-1])
-		return annotated_pil, detections
+    res = results[0]
+    
+    # ✅ Draw bounding boxes manually WITHOUT using res.plot()
+    from PIL import ImageDraw
+    annotated_pil = image.copy()
+    draw = ImageDraw.Draw(annotated_pil)
+    
+    detections: List[Dict] = []
+    if res.boxes is not None and len(res.boxes) > 0:
+        classes = res.names
+        for i, box in enumerate(res.boxes, 1):
+            cls_id = int(box.cls.item())
+            conf_score = float(box.conf.item())
+            x1, y1, x2, y2 = [float(v) for v in box.xyxy[0].tolist()]
+            class_name = classes.get(cls_id, str(cls_id)) if isinstance(classes, dict) else str(cls_id)
+            
+            # Draw bounding box
+            box_color = "#ff0000"  # Red for diseases
+            draw.rectangle([x1, y1, x2, y2], outline=box_color, width=2)
+            
+            # Draw label
+            label_text = f"{class_name} {conf_score:.2f}"
+            draw.text((x1, y1 - 10), label_text, fill=box_color)
+            
+            detections.append(
+                {
+                    "detection_id": i,
+                    "class_id": cls_id,
+                    "class_name": class_name,
+                    "confidence": conf_score,
+                    "bbox": [x1, y1, x2, y2],
+                }
+            )
+    
+    return annotated_pil, detections
 
 
 # Model configuration
