@@ -6,7 +6,7 @@ Streamlit Cloud Compatible
 import os
 import sys
 
-# CRITICAL: Set ALL environment variables BEFORE any imports
+# CRITICAL: Set ALL environment variables BEFORE any imports to prevent segfaults
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -20,7 +20,13 @@ os.environ['MPLBACKEND'] = 'Agg'
 os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '0'
 os.environ['YOLO_VERBOSE'] = 'False'
 os.environ['YOLO_SETTINGS_DIR'] = '/tmp/ultralytics'
-os.environ['OPENBLAS_NUM_THREADS'] = '1'
+# Additional OpenCV settings to prevent segfaults
+os.environ['OPENCV_VIDEOIO_PRIORITY_MSMF'] = '0'
+os.environ['OPENCV_VIDEOIO_DEBUG'] = '0'
+os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
+# Prevent OpenGL/GLX issues that can cause segfaults
+os.environ['LIBGL_ALWAYS_SOFTWARE'] = '1'
+os.environ['GALLIUM_DRIVER'] = 'llvmpipe'
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -33,7 +39,8 @@ import streamlit as st
 from PIL import Image
 
 # Defer YOLO import until needed to prevent segmentation fault on startup
-# from ultralytics import YOLO  # Will be imported inside the class
+# YOLO will be imported inside the class and load_detector function
+# This prevents segfaults during Streamlit startup
 
 
 
@@ -441,14 +448,25 @@ class YoloDiseaseDetector:
 		import sys
 		import io
 		import contextlib
-	
-    
-		with warnings.catch_warnings():
-			warnings.simplefilter("ignore")
-			try:
-				from ultralytics import YOLO
-			except Exception as e:
-				raise ImportError(f"Failed to import YOLO: {str(e)}")
+		
+		# Additional environment variables for this instance
+		os.environ['LIBGL_ALWAYS_SOFTWARE'] = '1'
+		os.environ['GALLIUM_DRIVER'] = 'llvmpipe'
+		
+		# Suppress all warnings and redirect stderr during import to prevent segfaults
+		old_stderr = sys.stderr
+		sys.stderr = io.StringIO()
+		
+		try:
+			with warnings.catch_warnings():
+				warnings.simplefilter("ignore")
+				try:
+					from ultralytics import YOLO
+				except Exception as e:
+					sys.stderr = old_stderr
+					raise ImportError(f"Failed to import YOLO: {str(e)}")
+		finally:
+			sys.stderr = old_stderr
 		
 		if not os.path.exists(model_path):
 			raise FileNotFoundError(f"Model file not found at '{model_path}'")
@@ -671,15 +689,27 @@ def ensure_model_exists(model_path: str):
 @st.cache_resource(show_spinner=False)
 def load_detector(model_path: str):
     try:
-        # Suppress OpenGL/libGL warnings during import
+        # Suppress OpenGL/libGL warnings during import to prevent segfaults
         import warnings
         import sys
         import io
         import contextlib
         
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            from ultralytics import YOLO
+        # Set additional environment variables before import
+        os.environ['LIBGL_ALWAYS_SOFTWARE'] = '1'
+        os.environ['GALLIUM_DRIVER'] = 'llvmpipe'
+        
+        # Redirect stderr during import to catch any segfault-related errors
+        old_stderr = sys.stderr
+        null_stderr = io.StringIO()
+        sys.stderr = null_stderr
+        
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                from ultralytics import YOLO
+        finally:
+            sys.stderr = old_stderr
         
         # Check if model file exists
         if not os.path.exists(model_path):
@@ -1669,7 +1699,17 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
+# Run main function with error handling to prevent segfaults from crashing the app
 if __name__ == "__main__":
+    try:
+        main()
+    except SystemExit:
+        # Streamlit uses SystemExit for stopping, this is normal
+        pass
+    except Exception as e:
+        # Catch any other exceptions to prevent crashes
+        st.error(f"❌ Application error: {str(e)}")
+        st.exception(e)
     main()
 
 
