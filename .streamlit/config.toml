@@ -1,0 +1,17 @@
+[client]
+showErrorDetails = false
+toolbarMode = "minimal"
+
+[server]
+maxUploadSize = 200
+enableCORS = false
+enableXsrfProtection = true
+headless = true
+logger.level = "error"
+
+[theme]
+primaryColor = "#1f6e58"
+backgroundColor = "#f5f5f5"
+secondaryBackgroundColor = "#e0e0e0"
+textColor = "#262626"
+font = "sans serif"
