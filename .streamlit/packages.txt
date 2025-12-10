@@ -10,6 +10,4 @@ libxrender-dev
 libgomp1
 libglib2.0-0
 libstdc++6
-libopenblas-dev
-gfortran
 EOF
