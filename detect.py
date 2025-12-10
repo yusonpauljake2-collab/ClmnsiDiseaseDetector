@@ -567,75 +567,75 @@ class YoloDiseaseDetector:
 			else:
 				raise RuntimeError(f"Failed to load model: {str(final_e)}")
 
-def predict_image(self, image: Image.Image, conf: float = 0.25, iou: float = 0.50, imgsz: int = 640) -> Tuple[Image.Image, List[Dict]]:
-    """
-    Run prediction on PIL Image - NO OpenCV GUI operations.
-    Uses pure PIL drawing instead of res.plot()
-    """
-    try:
-        # Ensure RGB
-        if image.mode != "RGB":
-            image = image.convert("RGB")
-        
-        # Convert to numpy array for YOLO
-        rgb_array = np.array(image)
-        bgr_array = rgb_array[:, :, ::-1]
-        
-        # Run inference
-        results = self.model.predict(
-            source=bgr_array,
-            conf=conf,
-            iou=iou,
-            imgsz=imgsz,
-            verbose=False
-        )
-        
-        if not results:
-            return image, []
-        
-        res = results[0]
-        
-        # ✅ FIXED: Draw using PIL instead of res.plot()
-        from PIL import ImageDraw
-        annotated_pil = image.copy()
-        draw = ImageDraw.Draw(annotated_pil)
-        
-        detections: List[Dict] = []
-        
-        if res.boxes is not None and len(res.boxes) > 0:
-            classes = res.names
-            
-            for i, box in enumerate(res.boxes, 1):
-                cls_id = int(box.cls.item())
-                conf_score = float(box.conf.item())
-                x1, y1, x2, y2 = [float(v) for v in box.xyxy[0].tolist()]
-                
-                # Get class name
-                if isinstance(classes, dict):
-                    class_name = classes.get(cls_id, f"Class_{cls_id}")
-                else:
-                    class_name = str(cls_id)
-                
-                # Draw bounding box (red)
-                box_color = "red"
-                draw.rectangle([x1, y1, x2, y2], outline=box_color, width=3)
-                
-                # Draw label with confidence
-                label_text = f"{class_name} {conf_score:.2f}"
-                draw.text((x1 + 5, y1 + 5), label_text, fill=box_color)
-                
-                detections.append({
-                    "detection_id": i,
-                    "class_id": cls_id,
-                    "class_name": class_name,
-                    "confidence": conf_score,
-                    "bbox": [x1, y1, x2, y2],
-                })
-        
-        return annotated_pil, detections
-    
-    except Exception as e:
-        raise RuntimeError(f"Prediction failed: {str(e)}")
+	def predict_image(self, image: Image.Image, conf: float = 0.25, iou: float = 0.50, imgsz: int = 640) -> Tuple[Image.Image, List[Dict]]:
+		"""
+		Run prediction on PIL Image - NO OpenCV GUI operations.
+		Uses pure PIL drawing instead of res.plot()
+		"""
+		try:
+			# Ensure RGB
+			if image.mode != "RGB":
+				image = image.convert("RGB")
+			
+			# Convert to numpy array for YOLO
+			rgb_array = np.array(image)
+			bgr_array = rgb_array[:, :, ::-1]
+			
+			# Run inference
+			results = self.model.predict(
+				source=bgr_array,
+				conf=conf,
+				iou=iou,
+				imgsz=imgsz,
+				verbose=False
+			)
+			
+			if not results:
+				return image, []
+			
+			res = results[0]
+			
+			# ✅ FIXED: Draw using PIL instead of res.plot()
+			from PIL import ImageDraw
+			annotated_pil = image.copy()
+			draw = ImageDraw.Draw(annotated_pil)
+			
+			detections: List[Dict] = []
+			
+			if res.boxes is not None and len(res.boxes) > 0:
+				classes = res.names
+				
+				for i, box in enumerate(res.boxes, 1):
+					cls_id = int(box.cls.item())
+					conf_score = float(box.conf.item())
+					x1, y1, x2, y2 = [float(v) for v in box.xyxy[0].tolist()]
+					
+					# Get class name
+					if isinstance(classes, dict):
+						class_name = classes.get(cls_id, f"Class_{cls_id}")
+					else:
+						class_name = str(cls_id)
+					
+					# Draw bounding box (red)
+					box_color = "red"
+					draw.rectangle([x1, y1, x2, y2], outline=box_color, width=3)
+					
+					# Draw label with confidence
+					label_text = f"{class_name} {conf_score:.2f}"
+					draw.text((x1 + 5, y1 + 5), label_text, fill=box_color)
+					
+					detections.append({
+						"detection_id": i,
+						"class_id": cls_id,
+						"class_name": class_name,
+						"confidence": conf_score,
+						"bbox": [x1, y1, x2, y2],
+					})
+			
+			return annotated_pil, detections
+		
+		except Exception as e:
+			raise RuntimeError(f"Prediction failed: {str(e)}")
 
 
 
