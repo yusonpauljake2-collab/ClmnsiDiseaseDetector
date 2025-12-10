@@ -424,31 +424,42 @@ class YoloDiseaseDetector:
 	"""Wrapper around Ultralytics YOLO for calamansi disease detection."""
 
 	def __init__(self, model_path: str, device: Optional[str] = None):
-		# Set all environment variables before importing to prevent segmentation faults
-		os.environ['CUDA_VISIBLE_DEVICES'] = ''
-		os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '0'
-		os.environ['QT_QPA_PLATFORM'] = 'offscreen'
-		os.environ['DISPLAY'] = ''
-		os.environ['MPLBACKEND'] = 'Agg'
-		os.environ['OMP_NUM_THREADS'] = '1'
-		os.environ['MKL_NUM_THREADS'] = '1'
-		
-		# Import YOLO here to defer import and prevent segmentation fault on startup
-		try:
-			from ultralytics import YOLO
-		except Exception as e:
-			raise ImportError(f"Failed to import YOLO: {str(e)}")
-		
-		if not os.path.exists(model_path):
-			raise FileNotFoundError(f"Model file not found at '{model_path}'. Place your model file in the project root or provide a valid path.")
-		
-		# Always use CPU on Streamlit Cloud
-		device = device or 'cpu'
-		try:
-			self.model = YOLO(model_path)
-			self.model.to(device)
-		except Exception as e:
-			raise RuntimeError(f"Failed to load YOLO model: {str(e)}")
+    # Set all environment variables before importing
+    os.environ['CUDA_VISIBLE_DEVICES'] = ''
+    os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '0'
+    os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+    os.environ['DISPLAY'] = ''
+    os.environ['MPLBACKEND'] = 'Agg'
+    os.environ['OMP_NUM_THREADS'] = '1'
+    os.environ['MKL_NUM_THREADS'] = '1'
+    
+    # Suppress libGL warnings
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            from ultralytics import YOLO
+        except Exception as e:
+            raise ImportError(f"Failed to import YOLO: {str(e)}")
+    
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model file not found at '{model_path}'")
+    
+    device = device or 'cpu'
+    try:
+        self.model = YOLO(model_path)
+        self.model.to(device)
+    except Exception as e:
+        # Don't fail on libGL errors - they're harmless on CPU
+        if "libGL" not in str(e):
+            raise RuntimeError(f"Failed to load YOLO model: {str(e)}")
+        # Otherwise, try anyway - libGL is for GPU rendering, we're on CPU
+        try:
+            self.model = YOLO(model_path)
+            self.model.to('cpu')
+        except Exception as retry_error:
+            raise RuntimeError(f"Failed to load YOLO model: {str(retry_error)}")
+
 
 def predict_image(self, image: Image.Image, conf: float = 0.25, iou: float = 0.50, imgsz: int = 640) -> Tuple[Image.Image, List[Dict]]:
     """
@@ -556,17 +567,37 @@ def ensure_model_exists(model_path: str):
     return True
 
 @st.cache_resource
-@st.cache_resource
 def load_detector(model_path: str):
-    """Load detector safely."""
     try:
-        from ultralytics import YOLO
+        # Suppress OpenGL/libGL warnings during import
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            from ultralytics import YOLO
         
         if not os.path.exists(model_path):
             st.warning(f"Model '{model_path}' not found. Using YOLOv8n for testing.")
             model_path = 'yolov8n.pt'
         
-        return YoloDiseaseDetector(model_path=model_path, device='cpu')
+        # Add error handling for YOLO initialization
+        try:
+            detector = YoloDiseaseDetector(model_path=model_path, device='cpu')
+            return detector
+        except RuntimeError as e:
+            if "libGL" in str(e):
+                # Ignore libGL errors - they won't affect CPU mode
+                st.info("⚠️ GPU detection library unavailable (expected on cloud). Using CPU mode.")
+                # Try to load model anyway
+                try:
+                    detector = YoloDiseaseDetector(model_path=model_path, device='cpu')
+                    return detector
+                except:
+                    st.error(f"❌ Failed to initialize model: {str(e)}")
+                    return None
+            else:
+                st.error(f"❌ Model loading error: {str(e)}")
+                return None
+    
     except Exception as e:
         st.error(f"❌ Failed to load model: {str(e)}")
         return None
