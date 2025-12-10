@@ -1,11 +1,12 @@
 """
 Calamansi Disease Detection System
+Streamlit Cloud Compatible
 """
 
 import os
 import sys
 
-# Environment vars FIRST
+# CRITICAL: Set ALL environment variables BEFORE any imports
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -13,11 +14,13 @@ os.environ['MKL_NUM_THREADS'] = '1'
 os.environ['NUMEXPR_NUM_THREADS'] = '1'
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = ''
 os.environ['DISPLAY'] = ''
 os.environ['MPLBACKEND'] = 'Agg'
 os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '0'
 os.environ['YOLO_VERBOSE'] = 'False'
 os.environ['YOLO_SETTINGS_DIR'] = '/tmp/ultralytics'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
 
 import warnings
 warnings.filterwarnings('ignore')
