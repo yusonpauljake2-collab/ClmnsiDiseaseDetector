@@ -424,41 +424,41 @@ class YoloDiseaseDetector:
 	"""Wrapper around Ultralytics YOLO for calamansi disease detection."""
 
 	def __init__(self, model_path: str, device: Optional[str] = None):
-    # Set all environment variables before importing
-    os.environ['CUDA_VISIBLE_DEVICES'] = ''
-    os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '0'
-    os.environ['QT_QPA_PLATFORM'] = 'offscreen'
-    os.environ['DISPLAY'] = ''
-    os.environ['MPLBACKEND'] = 'Agg'
-    os.environ['OMP_NUM_THREADS'] = '1'
-    os.environ['MKL_NUM_THREADS'] = '1'
-    
-    # Suppress libGL warnings
-    import warnings
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        try:
-            from ultralytics import YOLO
-        except Exception as e:
-            raise ImportError(f"Failed to import YOLO: {str(e)}")
-    
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model file not found at '{model_path}'")
-    
-    device = device or 'cpu'
-    try:
-        self.model = YOLO(model_path)
-        self.model.to(device)
-    except Exception as e:
-        # Don't fail on libGL errors - they're harmless on CPU
-        if "libGL" not in str(e):
-            raise RuntimeError(f"Failed to load YOLO model: {str(e)}")
-        # Otherwise, try anyway - libGL is for GPU rendering, we're on CPU
-        try:
-            self.model = YOLO(model_path)
-            self.model.to('cpu')
-        except Exception as retry_error:
-            raise RuntimeError(f"Failed to load YOLO model: {str(retry_error)}")
+		# Set all environment variables before importing
+		os.environ['CUDA_VISIBLE_DEVICES'] = ''
+		os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '0'
+		os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+		os.environ['DISPLAY'] = ''
+		os.environ['MPLBACKEND'] = 'Agg'
+		os.environ['OMP_NUM_THREADS'] = '1'
+		os.environ['MKL_NUM_THREADS'] = '1'
+		
+		# Suppress libGL warnings
+		import warnings
+		with warnings.catch_warnings():
+			warnings.simplefilter("ignore")
+			try:
+				from ultralytics import YOLO
+			except Exception as e:
+				raise ImportError(f"Failed to import YOLO: {str(e)}")
+		
+		if not os.path.exists(model_path):
+			raise FileNotFoundError(f"Model file not found at '{model_path}'")
+		
+		device = device or 'cpu'
+		try:
+			self.model = YOLO(model_path)
+			self.model.to(device)
+		except Exception as e:
+			# Don't fail on libGL errors - they're harmless on CPU
+			if "libGL" not in str(e):
+				raise RuntimeError(f"Failed to load YOLO model: {str(e)}")
+			# Otherwise, try anyway - libGL is for GPU rendering, we're on CPU
+			try:
+				self.model = YOLO(model_path)
+				self.model.to('cpu')
+			except Exception as retry_error:
+				raise RuntimeError(f"Failed to load YOLO model: {str(retry_error)}")
 
 
 def predict_image(self, image: Image.Image, conf: float = 0.25, iou: float = 0.50, imgsz: int = 640) -> Tuple[Image.Image, List[Dict]]:
