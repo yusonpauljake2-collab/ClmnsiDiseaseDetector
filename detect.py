@@ -664,14 +664,14 @@ def load_detector(model_path: str):
             try:
                 # Suppress stderr completely during initialization
                 with contextlib.redirect_stderr(io.StringIO()):
-            detector = YoloDiseaseDetector(model_path=model_path, device='cpu')
+                    detector = YoloDiseaseDetector(model_path=model_path, device='cpu')
                 
                 # If we get here, model loaded successfully
                 if attempt > 0:
                     st.success("✅ Model loaded successfully (libGL warnings ignored)")
-            return detector
+                return detector
                 
-        except RuntimeError as e:
+            except RuntimeError as e:
                 error_msg = str(e)
                 last_error = error_msg
                 
@@ -692,20 +692,20 @@ def load_detector(model_path: str):
                                 st.warning("⚠️ libGL unavailable (expected on cloud). Model should still work in CPU mode.")
                                 # Try one more time without any checks
                                 try:
-                    detector = YoloDiseaseDetector(model_path=model_path, device='cpu')
-                    return detector
-                except:
+                                    detector = YoloDiseaseDetector(model_path=model_path, device='cpu')
+                                    return detector
+                                except:
                                     st.error("❌ Model initialization failed. Please check if model file exists and is valid.")
-                    return None
-            else:
+                                    return None
+                            else:
                                 st.error(f"❌ Model loading error: {str(final_e)}")
                                 return None
                 else:
                     # Not a libGL error - real problem
                     st.error(f"❌ Model loading error: {error_msg}")
-                return None
-    
-    except Exception as e:
+                    return None
+                    
+            except Exception as e:
                 error_msg = str(e)
                 last_error = error_msg
                 
