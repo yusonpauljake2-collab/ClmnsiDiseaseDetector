@@ -446,90 +446,120 @@ class YoloDiseaseDetector:
 			raise FileNotFoundError(f"Model file not found at '{model_path}'")
 		
 		device = device or 'cpu'
+		
+		# Suppress stderr to catch libGL errors
+		import sys
+		import io
+		old_stderr = sys.stderr
+		captured_stderr = io.StringIO()
+		sys.stderr = captured_stderr
+		
 		try:
-			self.model = YOLO(model_path)
-			self.model.to(device)
-		except Exception as e:
-			# Don't fail on libGL errors - they're harmless on CPU
-			if "libGL" not in str(e):
-				raise RuntimeError(f"Failed to load YOLO model: {str(e)}")
-			# Otherwise, try anyway - libGL is for GPU rendering, we're on CPU
 			try:
 				self.model = YOLO(model_path)
-				self.model.to('cpu')
-			except Exception as retry_error:
-				raise RuntimeError(f"Failed to load YOLO model: {str(retry_error)}")
+				self.model.to(device)
+				sys.stderr = old_stderr
+			except Exception as e:
+				error_msg = str(e)
+				stderr_content = captured_stderr.getvalue()
+				sys.stderr = old_stderr
+				
+				# Check stderr for libGL errors
+				if "libGL" in error_msg or "libGL" in stderr_content or "libGL.so" in error_msg:
+					# libGL errors are harmless for CPU mode - try to continue
+					try:
+						# Try loading again - sometimes it works despite the warning
+						self.model = YOLO(model_path)
+						self.model.to('cpu')
+						return
+					except Exception as retry_error:
+						# If it still fails, check if it's still a libGL error
+						if "libGL" not in str(retry_error):
+							raise RuntimeError(f"Failed to load YOLO model: {str(retry_error)}")
+						# If it's still libGL, try one more time - it often works
+						try:
+							self.model = YOLO(model_path)
+							self.model.to('cpu')
+							return
+						except:
+							# Last resort - raise the original error
+							raise RuntimeError(f"Failed to load YOLO model (libGL issue): {error_msg}")
+				else:
+					raise RuntimeError(f"Failed to load YOLO model: {error_msg}")
+		finally:
+			# Always restore stderr
+			if sys.stderr != old_stderr:
+				sys.stderr = old_stderr
 
-
-def predict_image(self, image: Image.Image, conf: float = 0.25, iou: float = 0.50, imgsz: int = 640) -> Tuple[Image.Image, List[Dict]]:
-    """
-    Run prediction on PIL Image - NO OpenCV GUI operations.
-    Uses pure PIL drawing instead of res.plot()
-    """
-    try:
-        # Ensure RGB
-        if image.mode != "RGB":
-            image = image.convert("RGB")
-        
-        # Convert to numpy array for YOLO
-        rgb_array = np.array(image)
-        bgr_array = rgb_array[:, :, ::-1]
-        
-        # Run inference
-        results = self.model.predict(
-            source=bgr_array,
-            conf=conf,
-            iou=iou,
-            imgsz=imgsz,
-            verbose=False
-        )
-        
-        if not results:
-            return image, []
-        
-        res = results[0]
-        
-        # ✅ FIXED: Draw using PIL instead of res.plot()
-        from PIL import ImageDraw
-        annotated_pil = image.copy()
-        draw = ImageDraw.Draw(annotated_pil)
-        
-        detections: List[Dict] = []
-        
-        if res.boxes is not None and len(res.boxes) > 0:
-            classes = res.names
-            
-            for i, box in enumerate(res.boxes, 1):
-                cls_id = int(box.cls.item())
-                conf_score = float(box.conf.item())
-                x1, y1, x2, y2 = [float(v) for v in box.xyxy[0].tolist()]
-                
-                # Get class name
-                if isinstance(classes, dict):
-                    class_name = classes.get(cls_id, f"Class_{cls_id}")
-                else:
-                    class_name = str(cls_id)
-                
-                # Draw bounding box (red)
-                box_color = "red"
-                draw.rectangle([x1, y1, x2, y2], outline=box_color, width=3)
-                
-                # Draw label with confidence
-                label_text = f"{class_name} {conf_score:.2f}"
-                draw.text((x1 + 5, y1 + 5), label_text, fill=box_color)
-                
-                detections.append({
-                    "detection_id": i,
-                    "class_id": cls_id,
-                    "class_name": class_name,
-                    "confidence": conf_score,
-                    "bbox": [x1, y1, x2, y2],
-                })
-        
-        return annotated_pil, detections
-    
-    except Exception as e:
-        raise RuntimeError(f"Prediction failed: {str(e)}")
+	def predict_image(self, image: Image.Image, conf: float = 0.25, iou: float = 0.50, imgsz: int = 640) -> Tuple[Image.Image, List[Dict]]:
+		"""
+		Run prediction on PIL Image - NO OpenCV GUI operations.
+		Uses pure PIL drawing instead of res.plot()
+		"""
+		try:
+			# Ensure RGB
+			if image.mode != "RGB":
+				image = image.convert("RGB")
+			
+			# Convert to numpy array for YOLO
+			rgb_array = np.array(image)
+			bgr_array = rgb_array[:, :, ::-1]
+			
+			# Run inference
+			results = self.model.predict(
+				source=bgr_array,
+				conf=conf,
+				iou=iou,
+				imgsz=imgsz,
+				verbose=False
+			)
+			
+			if not results:
+				return image, []
+			
+			res = results[0]
+			
+			# ✅ FIXED: Draw using PIL instead of res.plot()
+			from PIL import ImageDraw
+			annotated_pil = image.copy()
+			draw = ImageDraw.Draw(annotated_pil)
+			
+			detections: List[Dict] = []
+			
+			if res.boxes is not None and len(res.boxes) > 0:
+				classes = res.names
+				
+				for i, box in enumerate(res.boxes, 1):
+					cls_id = int(box.cls.item())
+					conf_score = float(box.conf.item())
+					x1, y1, x2, y2 = [float(v) for v in box.xyxy[0].tolist()]
+					
+					# Get class name
+					if isinstance(classes, dict):
+						class_name = classes.get(cls_id, f"Class_{cls_id}")
+					else:
+						class_name = str(cls_id)
+					
+					# Draw bounding box (red)
+					box_color = "red"
+					draw.rectangle([x1, y1, x2, y2], outline=box_color, width=3)
+					
+					# Draw label with confidence
+					label_text = f"{class_name} {conf_score:.2f}"
+					draw.text((x1 + 5, y1 + 5), label_text, fill=box_color)
+					
+					detections.append({
+						"detection_id": i,
+						"class_id": cls_id,
+						"class_name": class_name,
+						"confidence": conf_score,
+						"bbox": [x1, y1, x2, y2],
+					})
+			
+			return annotated_pil, detections
+		
+		except Exception as e:
+			raise RuntimeError(f"Prediction failed: {str(e)}")
 
 
 
@@ -547,10 +577,6 @@ AUTO_DETECT_KEY = "auto_detect_retake"
 
 import os
 import streamlit as st
-
-# Model management
-BASE_MODEL_PATH = "BaseModel.pt"
-ENHANCED_MODEL_PATH = "EnhancedModel.pt"
 
 def ensure_model_exists(model_path: str):
     """Check if model exists, provide guidance if missing."""
@@ -584,23 +610,47 @@ def load_detector(model_path: str):
             detector = YoloDiseaseDetector(model_path=model_path, device='cpu')
             return detector
         except RuntimeError as e:
-            if "libGL" in str(e):
-                # Ignore libGL errors - they won't affect CPU mode
-                st.info("⚠️ GPU detection library unavailable (expected on cloud). Using CPU mode.")
-                # Try to load model anyway
+            error_msg = str(e)
+            # Check if it's a libGL error (common on cloud platforms)
+            if "libGL" in error_msg or "libGL.so" in error_msg:
+                # libGL errors are harmless for CPU mode - show info but try to continue
+                st.info("⚠️ GPU library unavailable (expected on cloud platforms). Continuing with CPU mode...")
+                # The __init__ method should have already handled this, but if it still fails,
+                # it means there's a different issue
+                st.error(f"❌ Failed to initialize model: {error_msg}")
+                return None
+            else:
+                st.error(f"❌ Model loading error: {error_msg}")
+                return None
+        except Exception as e:
+            error_msg = str(e)
+            if "libGL" in error_msg or "libGL.so" in error_msg:
+                st.info("⚠️ GPU library unavailable (expected on cloud). This won't affect CPU operation.")
+                # Try one more time - sometimes it works on retry
                 try:
                     detector = YoloDiseaseDetector(model_path=model_path, device='cpu')
                     return detector
                 except:
-                    st.error(f"❌ Failed to initialize model: {str(e)}")
+                    st.error(f"❌ Failed to initialize model: {error_msg}")
                     return None
             else:
-                st.error(f"❌ Model loading error: {str(e)}")
+                st.error(f"❌ Failed to load model: {error_msg}")
                 return None
     
     except Exception as e:
-        st.error(f"❌ Failed to load model: {str(e)}")
-        return None
+        error_msg = str(e)
+        if "libGL" in error_msg or "libGL.so" in error_msg:
+            st.info("⚠️ GPU library unavailable (expected on cloud). Attempting to continue...")
+            # Try one final time
+            try:
+                detector = YoloDiseaseDetector(model_path=model_path, device='cpu')
+                return detector
+            except:
+                st.error(f"❌ Failed to load model: {error_msg}")
+                return None
+        else:
+            st.error(f"❌ Failed to load model: {error_msg}")
+            return None
 
 
 def get_disease_info(disease_name):
@@ -1038,8 +1088,16 @@ def main():
                 st.markdown('<div id="analysis-results-start"></div>', unsafe_allow_html=True)
                 st.markdown("### 🔍 Analysis Results")
                 
-                # Select model path
-                model_path = ENHANCED_MODEL_PATH if "Enhanced" in model_choice else BASE_MODEL_PATH
+                # Select model path based on user selection
+                if "Enhanced" in model_choice:
+                    model_path = ENHANCED_MODEL_PATH
+                    model_name = "Enhanced Model"
+                else:
+                    model_path = BASE_MODEL_PATH
+                    model_name = "Base Model"
+                
+                # Display which model is being used
+                st.info(f"🤖 Using: **{model_name}** ({model_path})")
                 
                 # Run detection with progress bar
                 progress_bar = st.progress(0)
@@ -1056,10 +1114,16 @@ def main():
                     os.environ['DISPLAY'] = ''
                     os.environ['MPLBACKEND'] = 'Agg'
                     
-                    status_text.text("🔍 Loading model...")
+                    status_text.text(f"🔍 Loading {model_name}...")
                     progress_bar.progress(40)
                     
                     detector = load_detector(model_path)
+                    
+                    if detector is None:
+                        status_text.text("❌ Failed to load model")
+                        progress_bar.progress(100)
+                        st.error("❌ Failed to load model. Please check the error messages above.")
+                        st.stop()
                     
                     status_text.text("🔍 Analyzing image...")
                     progress_bar.progress(60)
