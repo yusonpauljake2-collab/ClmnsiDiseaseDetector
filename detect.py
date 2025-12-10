@@ -441,7 +441,8 @@ class YoloDiseaseDetector:
 		import sys
 		import io
 		import contextlib
-		
+	
+    
 		with warnings.catch_warnings():
 			warnings.simplefilter("ignore")
 			try:
@@ -468,70 +469,103 @@ class YoloDiseaseDetector:
 		null_stderr = io.StringIO()
 		
 		# Try loading model with full error suppression
-		max_retries = 3
+		# libGL errors should not prevent model loading in CPU mode
+		max_retries = 5
+		last_error = None
+		
 		for attempt in range(max_retries):
 			sys.stderr = null_stderr
 			try:
 				# Use context manager for additional stderr suppression
 				with contextlib.redirect_stderr(null_stderr):
 					self.model = YOLO(model_path)
-					self.model.to(device)
+					# Try to move to device, but don't fail if it doesn't work
+					try:
+						self.model.to(device)
+					except:
+						# If device assignment fails, try CPU
+						try:
+							self.model.to('cpu')
+						except:
+							# Even if device assignment fails, model might still work
+							pass
 				# Success - restore stderr and return
 				sys.stderr = old_stderr
-				return
+				# Verify model was actually created
+				if hasattr(self, 'model') and self.model is not None:
+					return
 			except Exception as e:
 				error_msg = str(e)
+				last_error = error_msg
+				stderr_content = null_stderr.getvalue() if hasattr(null_stderr, 'getvalue') else ""
 				sys.stderr = old_stderr
 				
-				# Check if it's a libGL error
-				if is_libgl_error(error_msg):
+				# Check if it's a libGL error (in error message or stderr)
+				is_libgl = is_libgl_error(error_msg) or is_libgl_error(stderr_content)
+				
+				if is_libgl:
 					# libGL errors are harmless - try again
 					if attempt < max_retries - 1:
 						# Reset stderr for next attempt
 						null_stderr = io.StringIO()
 						continue
 					else:
-						# Last attempt - try to load anyway
+						# Last attempt - try to load anyway, ignoring libGL errors
 						# libGL is only needed for GPU rendering, not CPU inference
 						try:
 							with contextlib.redirect_stderr(io.StringIO()):
 								self.model = YOLO(model_path)
 								self.model.to('cpu')
 							sys.stderr = old_stderr
-							return
+							if hasattr(self, 'model') and self.model is not None:
+								return
 						except Exception as final_error:
-							# If it's still a libGL error, ignore it and try one more time
-							if is_libgl_error(str(final_error)):
-								# Force load - model should work despite libGL errors
+							# Even if it fails, try one more time - libGL errors shouldn't stop us
+							final_msg = str(final_error)
+							if is_libgl_error(final_msg):
+								# Still libGL error - force load anyway
 								try:
-									self.model = YOLO(model_path)
-									self.model.to('cpu')
+									# Completely ignore errors and try to create model
+									with contextlib.redirect_stderr(io.StringIO()):
+										self.model = YOLO(model_path)
+										self.model.to('cpu')
 									sys.stderr = old_stderr
-									return
+									if hasattr(self, 'model') and self.model is not None:
+										return
 								except:
-									# If model object was created, use it anyway
-									# libGL errors don't prevent CPU inference
+									# If we get here, it's likely not just libGL - but try one more time
 									pass
 							# If it's not a libGL error, raise it
-							if not is_libgl_error(str(final_error)):
+							if not is_libgl_error(final_msg):
 								sys.stderr = old_stderr
-								raise RuntimeError(f"Failed to load YOLO model: {str(final_error)}")
+								raise RuntimeError(f"Failed to load YOLO model: {final_msg}")
 				else:
 					# Not a libGL error - this is a real problem
 					sys.stderr = old_stderr
 					raise RuntimeError(f"Failed to load YOLO model: {error_msg}")
 		
 		# If we get here, all retries failed but they were all libGL errors
-		# Try one final time without any error checking
+		# Try one final time without any error checking - libGL shouldn't prevent CPU mode
 		sys.stderr = old_stderr
 		try:
 			with contextlib.redirect_stderr(io.StringIO()):
 				self.model = YOLO(model_path)
 				self.model.to('cpu')
-		except:
-			# Last resort - try to create model object anyway
-			# The error might be in initialization but model might still work
-			raise RuntimeError("Failed to load model after multiple attempts. This may be due to libGL issues on cloud platforms.")
+			if hasattr(self, 'model') and self.model is not None:
+				return
+		except Exception as final_e:
+			# Even on final attempt, if it's libGL, try to proceed anyway
+			if is_libgl_error(str(final_e)):
+				# Last resort - create model object and hope it works
+				try:
+					self.model = YOLO(model_path)
+					self.model.to('cpu')
+					return
+				except:
+					# If this fails, it's likely a real problem, not just libGL
+					raise RuntimeError(f"Failed to load model. Error: {str(final_e)}. This may be due to missing model file or libGL issues on cloud platforms.")
+			else:
+				raise RuntimeError(f"Failed to load model: {str(final_e)}")
 
 def predict_image(self, image: Image.Image, conf: float = 0.25, iou: float = 0.50, imgsz: int = 640) -> Tuple[Image.Image, List[Dict]]:
     """
@@ -647,9 +681,31 @@ def load_detector(model_path: str):
             warnings.simplefilter("ignore")
             from ultralytics import YOLO
         
+        # Check if model file exists
         if not os.path.exists(model_path):
-            st.warning(f"Model '{model_path}' not found. Using YOLOv8n for testing.")
-            model_path = 'yolov8n.pt'
+            # Try to find the model file in common locations
+            possible_paths = [
+                model_path,
+                f"./{model_path}",
+                f"/mount/src/clmnsidiseasedetector/{model_path}",
+                f"/app/{model_path}"
+            ]
+            
+            found_path = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    found_path = path
+                    break
+            
+            if found_path:
+                model_path = found_path
+                st.info(f"📁 Found model at: {model_path}")
+            else:
+                st.error(f"❌ Model file '{model_path}' not found in any of these locations:")
+                for path in possible_paths:
+                    st.text(f"   - {path}")
+                st.warning("⚠️ Attempting to use YOLOv8n for testing. Please upload your model files.")
+                model_path = 'yolov8n.pt'
         
         # Helper to check if error is libGL-related
         def is_libgl_error(msg):
@@ -689,14 +745,30 @@ def load_detector(model_path: str):
                         except Exception as final_e:
                             if is_libgl_error(str(final_e)):
                                 # Still libGL error - this shouldn't prevent CPU mode
-                                st.warning("⚠️ libGL unavailable (expected on cloud). Model should still work in CPU mode.")
-                                # Try one more time without any checks
+                                st.warning("⚠️ libGL unavailable (expected on cloud). Attempting to load model anyway...")
+                                # Try one more time without any checks - libGL errors are harmless
                                 try:
                                     detector = YoloDiseaseDetector(model_path=model_path, device='cpu')
-                                    return detector
-                                except:
-                                    st.error("❌ Model initialization failed. Please check if model file exists and is valid.")
-                                    return None
+                                    if detector and hasattr(detector, 'model') and detector.model is not None:
+                                        st.success("✅ Model loaded successfully despite libGL warnings!")
+                                        return detector
+                                    else:
+                                        st.error("❌ Model object created but model attribute is None. Please check model file.")
+                                        return None
+                                except Exception as e:
+                                    error_str = str(e)
+                                    if is_libgl_error(error_str):
+                                        # Still libGL - try one final time
+                                        try:
+                                            detector = YoloDiseaseDetector(model_path=model_path, device='cpu')
+                                            return detector
+                                        except:
+                                            st.error(f"❌ Model initialization failed. Error: {error_str}")
+                                            st.info("💡 Tip: libGL errors are usually harmless. If model file exists, this might be a different issue.")
+                                            return None
+                                    else:
+                                        st.error(f"❌ Model initialization failed: {error_str}")
+                                        return None
                             else:
                                 st.error(f"❌ Model loading error: {str(final_e)}")
                                 return None
