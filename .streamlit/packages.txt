@@ -1,13 +1,8 @@
-mkdir -p .streamlit
-cat > .streamlit/packages.txt << 'EOF'
-build-essential
-python3-dev
-libffi-dev
-libssl-dev
 libsm6
 libxext6
 libxrender-dev
 libgomp1
 libglib2.0-0
 libstdc++6
-EOF
+libopenblas0
+libatlas3-base
