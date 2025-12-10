@@ -7,7 +7,6 @@ maxUploadSize = 200
 enableCORS = false
 enableXsrfProtection = true
 headless = true
-logger.level = "error"
 
 [theme]
 primaryColor = "#1f6e58"
