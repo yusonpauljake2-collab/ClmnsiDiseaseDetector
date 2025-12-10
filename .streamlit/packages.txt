@@ -4,5 +4,5 @@ libxrender-dev
 libgomp1
 libglib2.0-0
 libstdc++6
-libopenblas0
-libatlas3-base
+libgl1-mesa-glx
+libglx0
